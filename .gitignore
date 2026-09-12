@@ -1,0 +1,29 @@
+# Binaries and build output
+/authdeck
+/dist/
+*.exe
+*.test
+*.out
+
+# Test and coverage artifacts
+coverage.out
+*.coverprofile
+
+# AuthDeck token stores (may contain access/refresh tokens)
+tokens.json
+authdeck-tokens.json
+.authdeck-tokens.json
+
+# Local configuration and secrets
+.env
+.env.*
+authdeck.yaml
+authdeck.local.yaml
+*.local.yaml
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

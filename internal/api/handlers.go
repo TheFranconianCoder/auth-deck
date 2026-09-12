@@ -1,0 +1,167 @@
+package api
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/TheFranconianCoder/auth-deck/internal/core/usecases"
+	"github.com/TheFranconianCoder/auth-deck/internal/state"
+	"github.com/TheFranconianCoder/auth-deck/internal/types"
+)
+
+func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		respondError(w, types.NewMethodNotAllowedError("POST required"))
+		return
+	}
+
+	if err := req.ParseForm(); err != nil {
+		respondError(w, types.NewBadRequestError("invalid request body"))
+		return
+	}
+	if grantType := req.FormValue("grant_type"); grantType != "" && grantType != "client_credentials" {
+		respondError(w, types.NewBadRequestError("only the client_credentials grant is supported"))
+		return
+	}
+
+	selection, err := r.selector.Select(req.Context(), usecases.SelectInput{
+		Type:      "TOKEN",
+		Method:    "TOKEN",
+		Path:      "/token",
+		GrantType: "client_credentials",
+	})
+	if err != nil {
+		respondError(w, types.NewUnauthorizedError(err.Error()))
+		return
+	}
+	r.writeProviderToken(w, req, selection.Provider)
+}
+
+func (r *Router) handleTokenDirect(w http.ResponseWriter, req *http.Request) {
+	provider := strings.TrimPrefix(req.URL.Path, "/token/")
+	if provider == "" {
+		respondError(w, types.NewBadRequestError("provider name required"))
+		return
+	}
+	r.writeProviderToken(w, req, provider)
+}
+
+// writeProviderToken resolves a token for a specific provider without asking
+// the TUI.
+func (r *Router) writeProviderToken(w http.ResponseWriter, req *http.Request, provider string) {
+	path := req.URL.Path
+
+	if _, ok := r.catalog.Get(provider); !ok {
+		r.queue.AddLog(state.LogEntry{Time: time.Now(), Method: "TOKEN", Path: path, Provider: provider, Err: "provider not found"})
+		respondError(w, types.NewNotFoundError(fmt.Sprintf("provider %q not found", provider)))
+		return
+	}
+
+	start := time.Now()
+	token, err := r.tokens.Obtain(req.Context(), provider)
+	if err != nil {
+		r.queue.AddLog(state.LogEntry{Time: time.Now(), Method: "TOKEN", Path: path, Provider: provider, Err: err.Error()})
+		respondError(w, types.NewUnauthorizedError(err.Error()))
+		return
+	}
+	r.queue.AddLog(state.LogEntry{
+		Time:     time.Now(),
+		Method:   "TOKEN",
+		Path:     path,
+		Provider: provider,
+		Status:   http.StatusOK,
+		Err:      fmt.Sprintf("%dms", time.Since(start).Milliseconds()),
+	})
+	writeToken(w, token)
+}
+
+func (r *Router) handleCallback(w http.ResponseWriter, req *http.Request) {
+	query := req.URL.Query()
+	code := query.Get("code")
+	stateID := query.Get("state")
+
+	if errParam := query.Get("error"); errParam != "" {
+		respondError(w, types.NewBadRequestError(fmt.Sprintf("%s: %s", errParam, query.Get("error_description"))))
+		return
+	}
+	if code == "" {
+		respondError(w, types.NewBadRequestError("no authorization code received"))
+		return
+	}
+
+	// The callback only serves AuthDeck's own interactive upstream flows.
+	if !r.tokens.DeliverCode(stateID, code) {
+		respondError(w, types.NewBadRequestError("unknown or expired authorization state"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<html><body><h1>Authorization complete!</h1><p>You can close this window.</p></body></html>`)
+}
+
+func (r *Router) handleProxy(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/proxy/")
+
+	body, _ := io.ReadAll(req.Body)
+	req.Body.Close()
+
+	// An explicit X-Auth-Provider header skips the interactive selection.
+	provider := req.Header.Get("X-Auth-Provider")
+	if provider != "" {
+		if _, ok := r.catalog.Get(provider); !ok {
+			respondError(w, types.NewNotFoundError(fmt.Sprintf("provider %q not found", provider)))
+			return
+		}
+	} else {
+		selection, err := r.selector.Select(req.Context(), usecases.SelectInput{
+			Type:      "PROXY",
+			Method:    req.Method,
+			Path:      "/" + path,
+			GrantType: "client_credentials",
+		})
+		if err != nil {
+			respondError(w, types.NewUnauthorizedError(err.Error()))
+			return
+		}
+		provider = selection.Provider
+	}
+
+	out, err := r.proxy.Forward(req.Context(), usecases.ForwardInput{
+		Provider:   provider,
+		Method:     req.Method,
+		Path:       "/" + path,
+		RawQuery:   req.URL.RawQuery,
+		Headers:    req.Header,
+		Body:       body,
+		RemoteAddr: req.RemoteAddr,
+		Host:       req.Host,
+	})
+	if err != nil {
+		respondError(w, types.NewBadRequestError(err.Error()))
+		return
+	}
+
+	for key, values := range out.Headers {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(out.StatusCode)
+	w.Write(out.Body)
+}
+
+func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Path != "/" {
+		http.NotFound(w, req)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<html><body><h1>AuthDeck</h1><p>OAuth 2.0 Local Token Proxy</p></body></html>`)
+}

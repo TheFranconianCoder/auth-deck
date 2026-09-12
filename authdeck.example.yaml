@@ -1,0 +1,31 @@
+server:
+  addr: "127.0.0.1:9090"
+  # Persisted tokens (optional). Default per OS:
+  #   Linux:   ~/.local/share/authdeck/tokens.json
+  #   macOS:   ~/Library/Application Support/authdeck/tokens.json
+  #   Windows: %AppData%\authdeck\tokens.json
+  # token_store: "~/.local/share/authdeck/tokens.json"
+
+providers:
+  # Machine-to-machine provider (client credentials)
+  example-m2m:
+    client_id: "your-m2m-client-id"
+    client_secret: "${EXAMPLE_M2M_SECRET}"
+    token_url: "https://idp.example.com/oidc/token"
+    scopes: ["api"]
+    resource: "https://api.example.com"
+    base_url: "https://api.example.com"
+    flow: "client_credentials"
+
+  # Interactive provider (authorization code)
+  example-web:
+    client_id: "your-web-client-id"
+    client_secret: "${EXAMPLE_WEB_SECRET}"
+    auth_url: "https://idp.example.com/oidc/auth"
+    token_url: "https://idp.example.com/oidc/token"
+    redirect_uri: "http://127.0.0.1:9090/callback"
+    scopes: ["openid", "profile", "offline_access"]
+    base_url: "https://api.example.com"
+    flow: "authorization_code"
+    pkce: true
+    prompt: "consent"
