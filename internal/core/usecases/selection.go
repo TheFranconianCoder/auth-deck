@@ -2,11 +2,15 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/TheFranconianCoder/auth-deck/internal/state"
 )
+
+// ErrRejected is returned when the user declines a pending request in the TUI.
+var ErrRejected = errors.New("request rejected")
 
 // ProviderSelector enqueues a request for the TUI and blocks until a provider
 // is chosen (or the request times out / is cancelled).
@@ -26,7 +30,7 @@ func (s *ProviderSelector) Select(ctx context.Context, in SelectInput) (SelectOu
 		Method:     in.Method,
 		Path:       in.Path,
 		GrantType:  in.GrantType,
-		ProviderCh: make(chan string, 1),
+		ProviderCh: make(chan state.Decision, 1),
 		CreatedAt:  time.Now(),
 	}
 
@@ -34,10 +38,14 @@ func (s *ProviderSelector) Select(ctx context.Context, in SelectInput) (SelectOu
 	s.notify(state.RequestAdded{Request: req})
 
 	select {
-	case provider := <-req.ProviderCh:
+	case decision := <-req.ProviderCh:
 		s.queue.Remove(req.ID)
-		s.notify(state.RequestDone{ID: req.ID, Provider: provider})
-		return SelectOutput{Provider: provider}, nil
+		if decision.Rejected {
+			s.notify(state.RequestDone{ID: req.ID, Provider: "rejected"})
+			return SelectOutput{}, ErrRejected
+		}
+		s.notify(state.RequestDone{ID: req.ID, Provider: decision.Provider})
+		return SelectOutput{Provider: decision.Provider}, nil
 	case <-time.After(2 * time.Minute):
 		s.queue.Remove(req.ID)
 		s.notify(state.RequestDone{ID: req.ID, Provider: "timeout"})

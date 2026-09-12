@@ -2,12 +2,12 @@
 
 A lightweight OAuth 2.0 local token proxy that acts as a bridge between API clients and multiple external identity
 providers. AuthDeck presents itself as a single OAuth2 endpoint, so tools never need to know which provider issues a
-token — or where the client secrets live.
+token—or where the client secrets live.
 
-- **Ad-hoc token selection** — a terminal UI lets you decide which provider fulfils a request.
-- **Transparent proxying** — forward requests to upstream APIs with a valid bearer token injected automatically.
-- **Works with anything** — Bruno, curl, scripts. No client changes required.
-- **Clean Architecture** — entities, use cases, state, and adapters, standard library first.
+- **Ad-hoc token selection**—a terminal UI lets you decide which provider fulfills a request.
+- **Transparent proxying**—forward requests to upstream APIs with a valid bearer token injected automatically.
+- **Works with anything**—Bruno, curl, scripts. No client changes required.
+- **Clean Architecture**—entities, use cases, state, and adapters, standard library first.
 
 ---
 
@@ -28,8 +28,8 @@ token — or where the client secrets live.
 
 ## How it works
 
-AuthDeck exposes a single, simple ingress: **OAuth 2.0 Client Credentials**. Whatever the upstream provider requires —
-a machine-to-machine exchange or a full interactive browser login — is handled inside AuthDeck and never leaks to the
+AuthDeck exposes a single, simple ingress: **OAuth 2.0 Client Credentials**. Whatever the upstream provider requires—a
+machine-to-machine exchange or a full interactive browser login—is handled inside AuthDeck and never leaks to the
 client.
 
 ```
@@ -44,14 +44,15 @@ client.
 
 Two ways to use it:
 
-1. **Token endpoint** — the client asks AuthDeck for a token and uses it itself (`POST /token`).
-2. **Reverse proxy** — the client sends the real API request to AuthDeck and never touches a token (`/proxy/*`).
+1. **Token endpoint**—the client asks AuthDeck for a token and uses it itself (`POST /token`).
+2. **Reverse proxy**—the client sends the real API request to AuthDeck and never touches a token (`/proxy/*`).
 
 Provider selection happens in the TUI when no provider is explicitly specified. If a provider is given (token path or
-`X-Auth-Provider` header), the selection is skipped.
+`X-Auth-Provider` header), the selection is skipped. Pending requests can also be rejected outright, which returns
+`403` to the caller.
 
 > **Interactive upstreams need no special client flow.** Selecting a provider configured with `flow: authorization_code`
-> makes AuthDeck open the browser, complete the login, and return the token to the client — all behind the same
+> makes AuthDeck open the browser, complete the login, and return the token to the client—all behind the same
 > `POST /token` call. The client still speaks only Client Credentials.
 
 ---
@@ -66,7 +67,7 @@ Requires **Go 1.27+**.
 go install github.com/TheFranconianCoder/auth-deck/cmd/auth-deck@latest
 ```
 
-This places the binary in `$(go env GOPATH)/bin` — make sure that directory is on your `PATH`.
+This places the binary in `$(go env GOPATH)/bin`—make sure that directory is on your `PATH`.
 
 ### mise
 
@@ -104,7 +105,7 @@ The proxy listens on `127.0.0.1:9090` by default and the TUI starts automaticall
 AuthDeck is configured through a single YAML file. When no `-config` flag is given, the file is read from the OS config
 directory: `~/.config/auth-deck/config.yaml` on Linux, `~/Library/Application Support/auth-deck/config.yaml` on macOS,
 and `%AppData%\auth-deck\config.yaml` on Windows. Override with `-config`. Values may reference environment variables
-using `${VAR}` syntax — useful for secrets.
+using `${VAR}` syntax—useful for secrets.
 
 ```yaml
 server:
@@ -195,7 +196,7 @@ with `400`.
 Providers and the request log sit side by side; pending requests appear below.
 
 ```
-AuthDeck — OAuth 2.0 Local Token Proxy
+AuthDeck :: OAuth 2.0 Local Token Proxy
 
 ┌ Providers ────────────────────┐ ┌ Log ──────────────────────────────────┐
 │  [1] logto        ● active 59m │ │ 14:30:21 GET   logto  200 /api/users  │
@@ -203,10 +204,10 @@ AuthDeck — OAuth 2.0 Local Token Proxy
 │  [3] google       ○ no token   │ │                                        │
 └───────────────────────────────┘ └────────────────────────────────────────┘
 
-New request — select provider:
+New request—select provider:
 ▸ PROXY /api/users  14:30:21
 
-[1-9] select provider  [↑↓] navigate
+[1-9] select provider  [r] reject  [↑↓] navigate
 ```
 
 Each log line shows `time`, `method`, `provider`, HTTP `status`, and the **called path** (especially useful for
@@ -215,6 +216,7 @@ Each log line shows `time`, `method`, `provider`, HTTP `status`, and the **calle
 | Key | Action |
 |---|---|
 | `1`–`9` | With a pending request: choose the provider. With none: **force a fresh token** (refresh, re-mint, or browser login). |
+| `r` | With a pending request: reject it (the caller receives `403`). |
 | `↑` / `k`, `↓` / `j` | Move the selection between pending requests. |
 | `esc` | Clear the current notice. |
 | `q` / `ctrl+c` | Quit AuthDeck (stops the proxy too). |
@@ -239,7 +241,7 @@ Token markers: `● active` (valid, with remaining time), `◐ expired`, `↻ re
 ### Refresh tokens (provider-specific)
 
 Providers only return a refresh token when the request asks for it. For Logto/OIDC that means the `offline_access`
-scope — and Logto additionally requires `prompt=consent` unless its non-standard “always issue refresh tokens” toggle is
+scope—and Logto additionally requires `prompt=consent` unless its non-standard “always issue refresh tokens” toggle is
 enabled:
 
 ```yaml
@@ -251,7 +253,7 @@ prompt: "consent"
 
 ## Examples
 
-### Bruno — Client Credentials
+### Bruno—Client Credentials
 
 ```
 Grant Type:  Client Credentials
@@ -264,13 +266,13 @@ Client Secret: x      # ignored
 That is the only client configuration needed. If the pinned/provider-selected upstream uses `authorization_code`,
 AuthDeck handles the browser login transparently and still returns the token here.
 
-### curl — token
+### curl—token
 
 ```bash
 curl -s -X POST http://127.0.0.1:9090/token/logto-m2m
 ```
 
-### curl — transparent proxy
+### curl—transparent proxy
 
 ```bash
 # Provider pinned via header (no TUI):
@@ -314,7 +316,7 @@ AuthDeck follows Clean Architecture with clear layer boundaries:
 ```
 cmd/auth-deck/main.go        # composition root (wiring)
 internal/
-  core/entities/            # Token, Provider — no dependencies
+  core/entities/            # Token, Provider—no dependencies
   core/usecases/            # use cases + interfaces.go (ports & DTOs)
   state/                    # in-memory read model: token cache, request queue, auth states
   infrastructure/           # adapters: config, oauth client, browser, file store, forwarder
@@ -333,4 +335,4 @@ next to the use cases and implemented by the adapters. Use cases never talk HTTP
 - AuthDeck binds to `127.0.0.1` only and trusts the local user. Do not expose it on a network interface.
 - Persisted tokens are stored **in plaintext**. Prefer a private token store path; do not commit it to version control.
 - Client secrets should come from the environment (`${VAR}`), not from a committed YAML file.
-- The proxy forwards arbitrary upstream paths — keep `base_url` values trusted.
+- The proxy forwards arbitrary upstream paths—keep `base_url` values trusted.

@@ -5,15 +5,22 @@ import (
 	"time"
 )
 
+// Decision is the TUI's answer to a pending request: either a chosen provider
+// or an explicit rejection.
+type Decision struct {
+	Provider string
+	Rejected bool
+}
+
 // PendingRequest represents an incoming proxy/token request awaiting a
-// provider decision in the TUI. ProviderCh carries the chosen provider.
+// provider decision in the TUI. ProviderCh carries the decision.
 type PendingRequest struct {
 	ID         string
 	Type       string
 	Method     string
 	Path       string
 	GrantType  string
-	ProviderCh chan string
+	ProviderCh chan Decision
 	CreatedAt  time.Time
 }
 

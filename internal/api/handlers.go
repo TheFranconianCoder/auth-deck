@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,16 @@ import (
 	"github.com/TheFranconianCoder/auth-deck/internal/state"
 	"github.com/TheFranconianCoder/auth-deck/internal/types"
 )
+
+// respondSelectionError maps a failed TUI provider selection onto an HTTP
+// response: an explicit rejection is forbidden, anything else unauthorized.
+func respondSelectionError(w http.ResponseWriter, err error) {
+	if errors.Is(err, usecases.ErrRejected) {
+		respondError(w, types.NewForbiddenError(err.Error()))
+		return
+	}
+	respondError(w, types.NewUnauthorizedError(err.Error()))
+}
 
 func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
@@ -34,7 +45,7 @@ func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
 		GrantType: "client_credentials",
 	})
 	if err != nil {
-		respondError(w, types.NewUnauthorizedError(err.Error()))
+		respondSelectionError(w, err)
 		return
 	}
 	r.writeProviderToken(w, req, selection.Provider)
@@ -123,7 +134,7 @@ func (r *Router) handleProxy(w http.ResponseWriter, req *http.Request) {
 			GrantType: "client_credentials",
 		})
 		if err != nil {
-			respondError(w, types.NewUnauthorizedError(err.Error()))
+			respondSelectionError(w, err)
 			return
 		}
 		provider = selection.Provider

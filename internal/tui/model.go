@@ -103,7 +103,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case state.BrowserOpen:
 		m.browserURL = msg.URL
 		m.browserProto = msg.Provider
-		m.notice = fmt.Sprintf("Browser opened for %s — waiting for callback...", msg.Provider)
+		m.notice = fmt.Sprintf("Browser opened for %s—waiting for callback...", msg.Provider)
 		return m, nil
 
 	case state.BrowserClosed:
@@ -134,7 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.providers {
 			if m.providers[i].name == msg.Provider {
 				m.providers[i].needsAuth = true
-				m.notice = fmt.Sprintf("Re-login required for %s — press [%d] to authenticate", msg.Provider, i+1)
+				m.notice = fmt.Sprintf("Re-login required for %s—press [%d] to authenticate", msg.Provider, i+1)
 				break
 			}
 		}
@@ -174,7 +174,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selected = len(m.pending) - 1
 					}
 					req := m.pending[m.selected]
-					req.ProviderCh <- m.providers[idx].name
+					req.ProviderCh <- state.Decision{Provider: m.providers[idx].name}
 					m.browserURL = ""
 					return m, nil
 				}
@@ -182,6 +182,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.notice = fmt.Sprintf("Fetching token for %s ...", m.providers[idx].name)
 					m.fetchToken(m.providers[idx].name)
 				}
+			}
+
+		case "r":
+			if len(m.pending) > 0 {
+				if m.selected < 0 || m.selected >= len(m.pending) {
+					m.selected = len(m.pending) - 1
+				}
+				req := m.pending[m.selected]
+				req.ProviderCh <- state.Decision{Rejected: true}
+				m.browserURL = ""
+				m.notice = fmt.Sprintf("Request rejected: %s %s", req.Method, req.Path)
 			}
 
 		case "esc":
@@ -242,7 +253,7 @@ func (m Model) View() string {
 	)
 
 	var b []string
-	b = append(b, titleStyle.Render("AuthDeck — OAuth 2.0 Local Token Proxy"), "")
+	b = append(b, titleStyle.Render("AuthDeck :: OAuth 2.0 Local Token Proxy"), "")
 	b = append(b, header, "")
 
 	if m.browserURL != "" {
@@ -253,7 +264,7 @@ func (m Model) View() string {
 			lipgloss.NewStyle().Faint(true).Render("  Waiting for callback..."),
 		})), "")
 	} else if len(m.pending) > 0 {
-		lines := []string{lipgloss.NewStyle().Bold(true).Render("New request — select provider:")}
+		lines := []string{lipgloss.NewStyle().Bold(true).Render("New request—select provider:")}
 		for i, req := range m.pending {
 			cursor := "  "
 			if i == m.selected {
@@ -263,7 +274,7 @@ func (m Model) View() string {
 			path := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(truncate(req.Path, total-24))
 			lines = append(lines, fmt.Sprintf("%s%s %s  %s", cursor, method, path, req.CreatedAt.Format("15:04:05")))
 		}
-		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9] select provider  [↑↓] navigate"))
+		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9] select provider  [r] reject  [↑↓] navigate"))
 		b = append(b, box.BorderForeground(lipgloss.Color("228")).Render(join(lines)), "")
 	} else {
 		b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  Waiting for requests..."), "")
