@@ -25,7 +25,7 @@ func NewProxyService(catalog ProviderCatalog, tokens *TokenService, forwarder Fo
 func (s *ProxyService) Forward(ctx context.Context, in ForwardInput) (ForwardOutput, error) {
 	p, ok := s.catalog.Get(in.Provider)
 	if !ok {
-		return ForwardOutput{}, fmt.Errorf("provider %q not found", in.Provider)
+		return ForwardOutput{}, fmt.Errorf("%w: %q", ErrProviderNotFound, in.Provider)
 	}
 
 	token, err := s.tokens.Obtain(ctx, in.Provider)
@@ -63,7 +63,7 @@ func (s *ProxyService) Forward(ctx context.Context, in ForwardInput) (ForwardOut
 			Provider: in.Provider,
 			Err:      err.Error(),
 		})
-		return ForwardOutput{}, err
+		return ForwardOutput{}, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 
 	s.queue.AddLog(state.LogEntry{

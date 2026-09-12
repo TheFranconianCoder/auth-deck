@@ -23,6 +23,24 @@ func respondSelectionError(w http.ResponseWriter, err error) {
 	respondError(w, types.NewUnauthorizedError(err.Error()))
 }
 
+// respondUsecaseError maps typed use-case failures onto HTTP statuses:
+// unknown provider is a usage error (400), a misconfigured provider is a
+// server error (500), upstream failures are 502, and auth timeouts are 504.
+func respondUsecaseError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, usecases.ErrProviderNotFound):
+		respondError(w, types.NewBadRequestError(err.Error()))
+	case errors.Is(err, usecases.ErrProviderConfig):
+		respondError(w, types.NewInternalError(err.Error()))
+	case errors.Is(err, usecases.ErrUpstream):
+		respondError(w, types.NewBadGatewayError(err.Error()))
+	case errors.Is(err, usecases.ErrAuthTimeout):
+		respondError(w, types.NewGatewayTimeoutError(err.Error()))
+	default:
+		respondError(w, types.NewInternalError(err.Error()))
+	}
+}
+
 func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		respondError(w, types.NewMethodNotAllowedError("POST required"))
@@ -67,7 +85,7 @@ func (r *Router) writeProviderToken(w http.ResponseWriter, req *http.Request, pr
 
 	if _, ok := r.catalog.Get(provider); !ok {
 		r.queue.AddLog(state.LogEntry{Time: time.Now(), Method: "TOKEN", Path: path, Provider: provider, Err: "provider not found"})
-		respondError(w, types.NewNotFoundError(fmt.Sprintf("provider %q not found", provider)))
+		respondError(w, types.NewBadRequestError(fmt.Sprintf("unknown provider %q", provider)))
 		return
 	}
 
@@ -75,7 +93,7 @@ func (r *Router) writeProviderToken(w http.ResponseWriter, req *http.Request, pr
 	token, err := r.tokens.Obtain(req.Context(), provider)
 	if err != nil {
 		r.queue.AddLog(state.LogEntry{Time: time.Now(), Method: "TOKEN", Path: path, Provider: provider, Err: err.Error()})
-		respondError(w, types.NewUnauthorizedError(err.Error()))
+		respondUsecaseError(w, err)
 		return
 	}
 	r.queue.AddLog(state.LogEntry{
@@ -113,37 +131,48 @@ func (r *Router) handleCallback(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprint(w, `<html><body><h1>Authorization complete!</h1><p>You can close this window.</p></body></html>`)
 }
 
+// handleProxy forwards an ad-hoc request whose provider is chosen in the TUI.
 func (r *Router) handleProxy(w http.ResponseWriter, req *http.Request) {
-	path := strings.TrimPrefix(req.URL.Path, "/proxy/")
+	path := "/" + strings.TrimPrefix(req.URL.Path, "/proxy/")
 
+	selection, err := r.selector.Select(req.Context(), usecases.SelectInput{
+		Type:      "PROXY",
+		Method:    req.Method,
+		Path:      path,
+		GrantType: "client_credentials",
+	})
+	if err != nil {
+		respondSelectionError(w, err)
+		return
+	}
+	r.forward(w, req, selection.Provider, path)
+}
+
+// handleDirectProxy forwards a request whose provider is pinned in the path,
+// so clients can point their API base URL at /direct/{provider} without any
+// AuthDeck-specific header.
+func (r *Router) handleDirectProxy(w http.ResponseWriter, req *http.Request) {
+	provider, path, ok := splitProvider(strings.TrimPrefix(req.URL.Path, "/direct/"))
+	if !ok {
+		respondError(w, types.NewBadRequestError("provider name required"))
+		return
+	}
+	if _, ok := r.catalog.Get(provider); !ok {
+		respondError(w, types.NewBadRequestError(fmt.Sprintf("unknown provider %q", provider)))
+		return
+	}
+	r.forward(w, req, provider, path)
+}
+
+// forward reads the request body and proxies it to the provider's upstream API.
+func (r *Router) forward(w http.ResponseWriter, req *http.Request, provider, path string) {
 	body, _ := io.ReadAll(req.Body)
 	req.Body.Close()
-
-	// An explicit X-Auth-Provider header skips the interactive selection.
-	provider := req.Header.Get("X-Auth-Provider")
-	if provider != "" {
-		if _, ok := r.catalog.Get(provider); !ok {
-			respondError(w, types.NewNotFoundError(fmt.Sprintf("provider %q not found", provider)))
-			return
-		}
-	} else {
-		selection, err := r.selector.Select(req.Context(), usecases.SelectInput{
-			Type:      "PROXY",
-			Method:    req.Method,
-			Path:      "/" + path,
-			GrantType: "client_credentials",
-		})
-		if err != nil {
-			respondSelectionError(w, err)
-			return
-		}
-		provider = selection.Provider
-	}
 
 	out, err := r.proxy.Forward(req.Context(), usecases.ForwardInput{
 		Provider:   provider,
 		Method:     req.Method,
-		Path:       "/" + path,
+		Path:       path,
 		RawQuery:   req.URL.RawQuery,
 		Headers:    req.Header,
 		Body:       body,
@@ -151,7 +180,7 @@ func (r *Router) handleProxy(w http.ResponseWriter, req *http.Request) {
 		Host:       req.Host,
 	})
 	if err != nil {
-		respondError(w, types.NewBadRequestError(err.Error()))
+		respondUsecaseError(w, err)
 		return
 	}
 
@@ -162,6 +191,23 @@ func (r *Router) handleProxy(w http.ResponseWriter, req *http.Request) {
 	}
 	w.WriteHeader(out.StatusCode)
 	w.Write(out.Body)
+}
+
+// splitProvider splits "name/rest" into the provider name and the upstream
+// path ("/rest"). It reports false when no provider segment is present.
+func splitProvider(rest string) (provider, path string, ok bool) {
+	rest = strings.TrimPrefix(rest, "/")
+	if rest == "" {
+		return "", "", false
+	}
+	provider, tail, found := strings.Cut(rest, "/")
+	if provider == "" {
+		return "", "", false
+	}
+	if !found {
+		return provider, "/", true
+	}
+	return provider, "/" + tail, true
 }
 
 func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {

@@ -39,6 +39,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("/token/", r.handleTokenDirect)
 	r.mux.HandleFunc("/callback", r.handleCallback)
 	r.mux.HandleFunc("/proxy/", r.handleProxy)
+	r.mux.HandleFunc("/direct/", r.handleDirectProxy)
 	r.mux.HandleFunc("/health", r.handleHealth)
 	r.mux.HandleFunc("/", r.handleIndex)
 }

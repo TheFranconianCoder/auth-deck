@@ -58,7 +58,7 @@ func NewTokenService(
 func (s *TokenService) Obtain(ctx context.Context, provider string) (*entities.Token, error) {
 	p, ok := s.catalog.Get(provider)
 	if !ok {
-		return nil, fmt.Errorf("provider %q not found", provider)
+		return nil, fmt.Errorf("%w: %q", ErrProviderNotFound, provider)
 	}
 
 	if token, ok := s.store.Get(provider); ok {
@@ -77,7 +77,7 @@ func (s *TokenService) Obtain(ctx context.Context, provider string) (*entities.T
 	token, err := s.client.ClientCredentials(ctx, p)
 	if err != nil {
 		s.notify(state.TokenUpdated{Provider: provider, Err: err.Error()})
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	s.storeAndNotify(provider, token)
 	return token, nil
@@ -90,7 +90,7 @@ func (s *TokenService) Obtain(ctx context.Context, provider string) (*entities.T
 func (s *TokenService) RefreshNow(ctx context.Context, provider string) (*entities.Token, error) {
 	p, ok := s.catalog.Get(provider)
 	if !ok {
-		err := fmt.Errorf("provider %q not found", provider)
+		err := fmt.Errorf("%w: %q", ErrProviderNotFound, provider)
 		s.notify(state.TokenUpdated{Provider: provider, Err: err.Error()})
 		return nil, err
 	}
@@ -114,14 +114,14 @@ func (s *TokenService) forceRefresh(ctx context.Context, p *entities.Provider) (
 	case entities.FlowClientCredentials:
 		token, err := s.client.ClientCredentials(ctx, p)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 		}
 		s.storeAndNotify(p.Name, token)
 		return token, nil
 	case entities.FlowAuthorizationCode:
 		return s.authorizeInteractive(ctx, p)
 	default:
-		return nil, fmt.Errorf("unsupported flow %q for provider %q", p.Flow, p.Name)
+		return nil, fmt.Errorf("%w: unsupported flow %q for provider %q", ErrProviderConfig, p.Flow, p.Name)
 	}
 }
 
@@ -130,12 +130,12 @@ func (s *TokenService) forceRefresh(ctx context.Context, p *entities.Provider) (
 func (s *TokenService) Exchange(ctx context.Context, provider, code, codeVerifier string) (*entities.Token, error) {
 	p, ok := s.catalog.Get(provider)
 	if !ok {
-		return nil, fmt.Errorf("provider %q not found", provider)
+		return nil, fmt.Errorf("%w: %q", ErrProviderNotFound, provider)
 	}
 	token, err := s.client.ExchangeCode(ctx, p, code, codeVerifier)
 	if err != nil {
 		s.notify(state.TokenUpdated{Provider: provider, Err: err.Error()})
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	s.storeAndNotify(provider, token)
 	return token, nil
@@ -226,7 +226,7 @@ func (s *TokenService) tryRefresh(ctx context.Context, p *entities.Provider, tok
 	}
 	refreshed, err := s.client.Refresh(ctx, p, token.RefreshToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 	s.storeAndNotify(p.Name, refreshed)
 	return refreshed, nil
@@ -252,7 +252,7 @@ func (s *TokenService) setCooldown(provider string, d time.Duration) {
 
 func (s *TokenService) authorizeInteractive(ctx context.Context, p *entities.Provider) (*entities.Token, error) {
 	if p.AuthURL == "" {
-		return nil, fmt.Errorf("auth_url not configured for provider %q", p.Name)
+		return nil, fmt.Errorf("%w: auth_url not configured for provider %q", ErrProviderConfig, p.Name)
 	}
 
 	stateID := state.NewID()
@@ -289,7 +289,7 @@ func (s *TokenService) authorizeInteractive(ctx context.Context, p *entities.Pro
 	case code := <-codeCh:
 		return s.Exchange(ctx, p.Name, code, codeVerifier)
 	case <-time.After(2 * time.Minute):
-		return nil, fmt.Errorf("timeout waiting for auth callback")
+		return nil, fmt.Errorf("%w: waiting for auth callback", ErrAuthTimeout)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

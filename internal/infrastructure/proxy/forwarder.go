@@ -40,11 +40,11 @@ func (f *Forwarder) Do(ctx context.Context, req usecases.ForwardRequest) (usecas
 	}
 
 	// Forward all client headers except hop-by-hop, length, and AuthDeck's own
-	// control/authorization headers.
+	// authorization header.
 	for key, values := range req.Headers {
 		canonical := http.CanonicalHeaderKey(key)
 		if hopByHopHeaders[canonical] || canonical == "Content-Length" || canonical == "Host" ||
-			canonical == "Authorization" || canonical == "X-Auth-Provider" {
+			canonical == "Authorization" {
 			continue
 		}
 		for _, value := range values {

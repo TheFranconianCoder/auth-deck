@@ -47,9 +47,9 @@ Two ways to use it:
 1. **Token endpoint**—the client asks AuthDeck for a token and uses it itself (`POST /token`).
 2. **Reverse proxy**—the client sends the real API request to AuthDeck and never touches a token (`/proxy/*`).
 
-Provider selection happens in the TUI when no provider is explicitly specified. If a provider is given (token path or
-`X-Auth-Provider` header), the selection is skipped. Pending requests can also be rejected outright, which returns
-`403` to the caller.
+Provider selection happens in the TUI unless it is pinned in the path. A provider can be given in the token path
+(`/token/{provider}`) or the proxy path (`/direct/{provider}/...`); then the selection is skipped. Pending requests can
+also be rejected outright, which returns `403` to the caller.
 
 > **Interactive upstreams need no special client flow.** Selecting a provider configured with `flow: authorization_code`
 > makes AuthDeck open the browser, complete the login, and return the token to the client—all behind the same
@@ -97,6 +97,13 @@ auth-deck
 ```
 
 The proxy listens on `127.0.0.1:9090` by default and the TUI starts automatically. Press `q` to stop both.
+
+### Version
+
+Installs via `go install` and mise embed the module version automatically—no build flags needed. The TUI shows it in
+the title bar, and `auth-deck -version` prints it alongside the Go version and, for local builds, the commit. For
+readable versions, publish SemVer tags (`git tag vX.Y.Z && git push origin vX.Y.Z`); untagged installs fall back to a
+pseudo-version, and local `go build`/`go run` show the commit hash (or `dev`).
 
 ---
 
@@ -180,7 +187,8 @@ with `400`.
 | `POST` | `/token` | Returns a token; provider chosen in the TUI. |
 | `POST` | `/token/{provider}` | Returns a token for a specific provider (no TUI). |
 | `GET` | `/callback` | Internal OAuth redirect target for interactive upstream flows. |
-| `ANY` | `/proxy/*` | Proxies to the upstream API with a bearer token. |
+| `ANY` | `/proxy/*` | Proxies to the upstream API; provider chosen in the TUI. |
+| `ANY` | `/direct/{provider}/*` | Proxies to a pinned provider's upstream API (no TUI). |
 | `GET` | `/health` | Health check. |
 
 **Token response**
@@ -275,17 +283,31 @@ curl -s -X POST http://127.0.0.1:9090/token/logto-m2m
 ### curl—transparent proxy
 
 ```bash
-# Provider pinned via header (no TUI):
-curl -s http://127.0.0.1:9090/proxy/api/users -H 'X-Auth-Provider: logto-m2m'
+# Provider pinned in the path (no TUI):
+curl -s http://127.0.0.1:9090/direct/logto-m2m/api/users
 
 # Provider chosen in the TUI:
 curl -s http://127.0.0.1:9090/proxy/api/users
 ```
 
-Everything after `/proxy/` is forwarded to `<base_url>/<path>`; method, query, headers, and body are passed through.
-All client request headers are forwarded, except hop-by-hop headers, `Content-Length`, `Authorization` (AuthDeck sets
-its own), and `X-Auth-Provider`. AuthDeck adds `Authorization: Bearer <token>` plus `X-Forwarded-For`,
-`X-Forwarded-Host`, and `X-Forwarded-Proto`; upstream response headers are passed back (minus hop-by-hop headers).
+Everything after `/proxy/` or `/direct/{provider}/` is forwarded to `<base_url>/<path>`; method, query, headers, and
+body are passed through. All client request headers are forwarded, except hop-by-hop headers, `Content-Length`,
+`Authorization` (AuthDeck sets its own), and `Host`. AuthDeck adds `Authorization: Bearer <token>` plus
+`X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto`; upstream response headers are passed back (minus
+hop-by-hop headers).
+
+Because the provider lives in the path, a client only needs to know an IdP or an API base URL—never an AuthDeck
+header. Point an OAuth2 client at `/token/{provider}` (a standard client-credentials response), or point the API base
+URL at `/direct/{provider}`. For example, with `golang.org/x/oauth2/clientcredentials`:
+
+```go
+cfg := clientcredentials.Config{
+    ClientID:     "ignored",
+    ClientSecret: "ignored",
+    TokenURL:     "http://127.0.0.1:9090/token/logto-m2m",
+}
+httpClient := cfg.Client(ctx) // adds the bearer token and refreshes it automatically
+```
 
 ---
 

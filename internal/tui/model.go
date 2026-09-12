@@ -11,6 +11,7 @@ import (
 
 	"github.com/TheFranconianCoder/auth-deck/internal/core/entities"
 	"github.com/TheFranconianCoder/auth-deck/internal/state"
+	"github.com/TheFranconianCoder/auth-deck/internal/version"
 )
 
 type providerStatus struct {
@@ -253,7 +254,7 @@ func (m Model) View() string {
 	)
 
 	var b []string
-	b = append(b, titleStyle.Render("AuthDeck :: OAuth 2.0 Local Token Proxy"), "")
+	b = append(b, titleStyle.Render(fmt.Sprintf("AuthDeck :: OAuth 2.0 Local Token Proxy  %s", version.String())), "")
 	b = append(b, header, "")
 
 	if m.browserURL != "" {

@@ -40,3 +40,11 @@ func NewMethodNotAllowedError(msg string) *AppError {
 func NewInternalError(msg string) *AppError {
 	return &AppError{Code: http.StatusInternalServerError, Message: msg}
 }
+
+func NewBadGatewayError(msg string) *AppError {
+	return &AppError{Code: http.StatusBadGateway, Message: msg}
+}
+
+func NewGatewayTimeoutError(msg string) *AppError {
+	return &AppError{Code: http.StatusGatewayTimeout, Message: msg}
+}

@@ -20,11 +20,18 @@ import (
 	filestore "github.com/TheFranconianCoder/auth-deck/internal/infrastructure/store"
 	"github.com/TheFranconianCoder/auth-deck/internal/state"
 	"github.com/TheFranconianCoder/auth-deck/internal/tui"
+	"github.com/TheFranconianCoder/auth-deck/internal/version"
 )
 
 func main() {
 	configPath := flag.String("config", "", "path to config (default: OS config directory)")
+	showVersion := flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.Full())
+		return
+	}
 
 	path := *configPath
 	if path == "" {
