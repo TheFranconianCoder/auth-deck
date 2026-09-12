@@ -1,5 +1,5 @@
 # Binaries and build output
-/authdeck
+/auth-deck
 /dist/
 *.exe
 *.test
@@ -11,14 +11,14 @@ coverage.out
 
 # AuthDeck token stores (may contain access/refresh tokens)
 tokens.json
-authdeck-tokens.json
-.authdeck-tokens.json
+auth-deck-tokens.json
+.auth-deck-tokens.json
 
 # Local configuration and secrets
 .env
 .env.*
-authdeck.yaml
-authdeck.local.yaml
+config.yaml
+config.local.yaml
 *.local.yaml
 
 # OS and editor cruft

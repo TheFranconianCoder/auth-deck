@@ -123,7 +123,7 @@ func Load(path string) (*Config, error) {
 }
 
 // DefaultTokenStorePath returns the OS-conventional location for the persisted
-// token store: ~/.local/share/authdeck on Linux (XDG), Application Support on
+// token store: ~/.local/share/auth-deck on Linux (XDG), Application Support on
 // macOS, and %AppData% on Windows.
 func DefaultTokenStorePath() string {
 	var base string
@@ -146,7 +146,18 @@ func DefaultTokenStorePath() string {
 	if base == "" {
 		base = "."
 	}
-	return filepath.Join(base, "authdeck", "tokens.json")
+	return filepath.Join(base, "auth-deck", "tokens.json")
+}
+
+// DefaultConfigPath returns the OS-conventional location of the AuthDeck
+// configuration file: $XDG_CONFIG_HOME/auth-deck/config.yaml on Linux,
+// ~/Library/Application Support/auth-deck/config.yaml on macOS, and
+// %AppData%\auth-deck\config.yaml on Windows.
+func DefaultConfigPath() string {
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "auth-deck", "config.yaml")
+	}
+	return "config.yaml"
 }
 
 // ExpandPath expands a leading ~ to the user's home directory.

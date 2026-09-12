@@ -1,6 +1,6 @@
 module github.com/TheFranconianCoder/auth-deck
 
-go 1.24.2
+go 1.27
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0

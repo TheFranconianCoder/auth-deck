@@ -23,10 +23,15 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "authdeck.yaml", "path to config")
+	configPath := flag.String("config", "", "path to config (default: OS config directory)")
 	flag.Parse()
 
-	cfg, err := config.Load(*configPath)
+	path := *configPath
+	if path == "" {
+		path = config.DefaultConfigPath()
+	}
+
+	cfg, err := config.Load(path)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}

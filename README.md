@@ -58,14 +58,41 @@ Provider selection happens in the TUI when no provider is explicitly specified. 
 
 ## Install & run
 
-Requires **Go 1.24+**.
+Requires **Go 1.27+**.
+
+### go install
+
+```bash
+go install github.com/TheFranconianCoder/auth-deck/cmd/auth-deck@latest
+```
+
+This places the binary in `$(go env GOPATH)/bin` — make sure that directory is on your `PATH`.
+
+### mise
+
+```bash
+mise use -g go@1.27 go:github.com/TheFranconianCoder/auth-deck/cmd/auth-deck@latest
+```
+
+mise installs the binary into its own tool directory and manages `PATH` for you.
+
+### From source
 
 ```bash
 git clone https://github.com/TheFranconianCoder/auth-deck
 cd auth-deck
-cp authdeck.example.yaml authdeck.yaml   # then edit your providers
-go build ./...
-go run ./cmd/authdeck -config authdeck.yaml
+go run ./cmd/auth-deck
+```
+
+### Configure and run
+
+All install methods read the same config file. Create it once, then start the binary:
+
+```bash
+mkdir -p ~/.config/auth-deck
+curl -fsSL https://raw.githubusercontent.com/TheFranconianCoder/auth-deck/main/config.example.yaml \
+  -o ~/.config/auth-deck/config.yaml   # then edit your providers
+auth-deck
 ```
 
 The proxy listens on `127.0.0.1:9090` by default and the TUI starts automatically. Press `q` to stop both.
@@ -74,14 +101,16 @@ The proxy listens on `127.0.0.1:9090` by default and the TUI starts automaticall
 
 ## Configuration
 
-AuthDeck is configured through a single YAML file (`authdeck.yaml` by default, override with `-config`). Values may
-reference environment variables using `${VAR}` syntax — useful for secrets.
+AuthDeck is configured through a single YAML file. When no `-config` flag is given, the file is read from the OS config
+directory: `~/.config/auth-deck/config.yaml` on Linux, `~/Library/Application Support/auth-deck/config.yaml` on macOS,
+and `%AppData%\auth-deck\config.yaml` on Windows. Override with `-config`. Values may reference environment variables
+using `${VAR}` syntax — useful for secrets.
 
 ```yaml
 server:
   addr: "127.0.0.1:9090"
   # Optional. Default per OS (see "Token store").
-  # token_store: "~/.local/share/authdeck/tokens.json"
+  # token_store: "~/.local/share/auth-deck/tokens.json"
 
 providers:
   logto-m2m:
@@ -265,15 +294,15 @@ restrictive permissions (`0600`, directory `0700`).
 
 | OS | Default path |
 |---|---|
-| Linux | `$XDG_DATA_HOME/authdeck/tokens.json`, else `~/.local/share/authdeck/tokens.json` |
-| macOS | `~/Library/Application Support/authdeck/tokens.json` |
-| Windows | `%AppData%\authdeck\tokens.json` |
+| Linux | `$XDG_DATA_HOME/auth-deck/tokens.json`, else `~/.local/share/auth-deck/tokens.json` |
+| macOS | `~/Library/Application Support/auth-deck/tokens.json` |
+| Windows | `%AppData%\auth-deck\tokens.json` |
 
 Override with `server.token_store` (supports a leading `~`):
 
 ```yaml
 server:
-  token_store: "~/.local/share/authdeck/tokens.json"
+  token_store: "~/.local/share/auth-deck/tokens.json"
 ```
 
 ---
@@ -283,7 +312,7 @@ server:
 AuthDeck follows Clean Architecture with clear layer boundaries:
 
 ```
-cmd/authdeck/main.go        # composition root (wiring)
+cmd/auth-deck/main.go        # composition root (wiring)
 internal/
   core/entities/            # Token, Provider — no dependencies
   core/usecases/            # use cases + interfaces.go (ports & DTOs)

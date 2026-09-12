@@ -1,10 +1,10 @@
 server:
   addr: "127.0.0.1:9090"
   # Persisted tokens (optional). Default per OS:
-  #   Linux:   ~/.local/share/authdeck/tokens.json
-  #   macOS:   ~/Library/Application Support/authdeck/tokens.json
-  #   Windows: %AppData%\authdeck\tokens.json
-  # token_store: "~/.local/share/authdeck/tokens.json"
+  #   Linux:   ~/.local/share/auth-deck/tokens.json
+  #   macOS:   ~/Library/Application Support/auth-deck/tokens.json
+  #   Windows: %AppData%\auth-deck\tokens.json
+  # token_store: "~/.local/share/auth-deck/tokens.json"
 
 providers:
   # Machine-to-machine provider (client credentials)
