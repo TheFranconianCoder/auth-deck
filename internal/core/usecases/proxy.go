@@ -47,13 +47,11 @@ func (s *ProxyService) Forward(ctx context.Context, in ForwardInput) (ForwardOut
 
 	start := time.Now()
 	resp, err := s.forwarder.Do(ctx, ForwardRequest{
-		Method:     in.Method,
-		URL:        target,
-		Headers:    in.Headers,
-		Body:       in.Body,
-		Token:      token,
-		RemoteAddr: in.RemoteAddr,
-		Host:       in.Host,
+		Method:  in.Method,
+		URL:     target,
+		Headers: in.Headers,
+		Body:    in.Body,
+		Token:   token,
 	})
 	if err != nil {
 		s.queue.AddLog(state.LogEntry{

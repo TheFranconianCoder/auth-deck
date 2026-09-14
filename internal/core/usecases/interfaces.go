@@ -77,14 +77,12 @@ type SelectOutput struct {
 }
 
 type ForwardInput struct {
-	Provider   string
-	Method     string
-	Path       string
-	RawQuery   string
-	Headers    map[string][]string
-	Body       []byte
-	RemoteAddr string
-	Host       string
+	Provider string
+	Method   string
+	Path     string
+	RawQuery string
+	Headers  map[string][]string
+	Body     []byte
 }
 
 type ForwardOutput struct {
@@ -94,13 +92,11 @@ type ForwardOutput struct {
 }
 
 type ForwardRequest struct {
-	Method     string
-	URL        string
-	Headers    map[string][]string
-	Body       []byte
-	Token      *entities.Token
-	RemoteAddr string
-	Host       string
+	Method  string
+	URL     string
+	Headers map[string][]string
+	Body    []byte
+	Token   *entities.Token
 }
 
 type ForwardResponse struct {

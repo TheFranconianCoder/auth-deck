@@ -170,14 +170,12 @@ func (r *Router) forward(w http.ResponseWriter, req *http.Request, provider, pat
 	req.Body.Close()
 
 	out, err := r.proxy.Forward(req.Context(), usecases.ForwardInput{
-		Provider:   provider,
-		Method:     req.Method,
-		Path:       path,
-		RawQuery:   req.URL.RawQuery,
-		Headers:    req.Header,
-		Body:       body,
-		RemoteAddr: req.RemoteAddr,
-		Host:       req.Host,
+		Provider: provider,
+		Method:   req.Method,
+		Path:     path,
+		RawQuery: req.URL.RawQuery,
+		Headers:  req.Header,
+		Body:     body,
 	})
 	if err != nil {
 		respondUsecaseError(w, err)

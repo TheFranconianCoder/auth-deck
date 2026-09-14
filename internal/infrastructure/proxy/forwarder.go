@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +23,14 @@ var hopByHopHeaders = map[string]bool{
 	"Upgrade":             true,
 }
 
+// forwardedHeaders are proxy-specific and must not be passed through: AuthDeck
+// is a local client, not a reverse proxy in front of the upstream.
+var forwardedHeaders = map[string]bool{
+	"X-Forwarded-For":   true,
+	"X-Forwarded-Host":  true,
+	"X-Forwarded-Proto": true,
+}
+
 // Forwarder performs the outbound HTTP call to an upstream API.
 type Forwarder struct {
 	http *http.Client
@@ -39,11 +46,12 @@ func (f *Forwarder) Do(ctx context.Context, req usecases.ForwardRequest) (usecas
 		return usecases.ForwardResponse{}, err
 	}
 
-	// Forward all client headers except hop-by-hop, length, and AuthDeck's own
-	// authorization header.
+	// Forward all client headers except hop-by-hop, proxy-specific, length, and
+	// AuthDeck's own authorization header.
 	for key, values := range req.Headers {
 		canonical := http.CanonicalHeaderKey(key)
-		if hopByHopHeaders[canonical] || canonical == "Content-Length" || canonical == "Host" ||
+		if hopByHopHeaders[canonical] || forwardedHeaders[canonical] ||
+			canonical == "Content-Length" || canonical == "Host" ||
 			canonical == "Authorization" {
 			continue
 		}
@@ -60,14 +68,6 @@ func (f *Forwarder) Do(ctx context.Context, req usecases.ForwardRequest) (usecas
 		httpReq.Header.Set("Authorization", tokenType+" "+req.Token.AccessToken)
 	}
 
-	if clientIP := clientIP(req.RemoteAddr); clientIP != "" {
-		httpReq.Header.Set("X-Forwarded-For", clientIP)
-	}
-	if req.Host != "" {
-		httpReq.Header.Set("X-Forwarded-Host", req.Host)
-	}
-	httpReq.Header.Set("X-Forwarded-Proto", "http")
-
 	resp, err := f.http.Do(httpReq)
 	if err != nil {
 		return usecases.ForwardResponse{}, err
@@ -82,7 +82,7 @@ func (f *Forwarder) Do(ctx context.Context, req usecases.ForwardRequest) (usecas
 	headers := make(map[string][]string, len(resp.Header))
 	for key, values := range resp.Header {
 		canonical := http.CanonicalHeaderKey(key)
-		if hopByHopHeaders[canonical] || canonical == "Content-Length" {
+		if hopByHopHeaders[canonical] || forwardedHeaders[canonical] || canonical == "Content-Length" {
 			continue
 		}
 		headers[key] = values
@@ -93,14 +93,4 @@ func (f *Forwarder) Do(ctx context.Context, req usecases.ForwardRequest) (usecas
 		Headers:    headers,
 		Body:       body,
 	}, nil
-}
-
-func clientIP(remoteAddr string) string {
-	if remoteAddr == "" {
-		return ""
-	}
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		return host
-	}
-	return remoteAddr
 }
