@@ -238,7 +238,8 @@ Each log line shows `time`, `method`, `provider`, HTTP `status`, and the **calle
 
 The provider list shows a viewport of twelve entries with a `n-m/total` position in its header. Providers beyond the
 first 35 (nine digits plus twenty-six letters) have no shortcut—their label is `[–]`—and are only reachable by pinning
-them in the path (`/token/{provider}` or `/direct/{provider}/...`).
+them in the path (`/token/{provider}` or `/direct/{provider}/...`). The focused list has a highlighted border and
+cursor; the other list is dimmed until `tab` moves the focus back.
 
 Token markers: `● active` (valid, with remaining time), `◐ expired`, `↻ re-login` (interactive login required),
 `○ no token`, `✗ error`.

@@ -26,6 +26,31 @@ const (
 // same height as the log panel.
 const maxProviderRows = 12
 
+// providerBorderColor highlights the provider list while it has focus.
+func providerBorderColor(f focusArea) lipgloss.Color {
+	if f == focusProviders {
+		return lipgloss.Color("62")
+	}
+	return lipgloss.Color("240")
+}
+
+// pendingBorderColor highlights the pending list while it has focus.
+func pendingBorderColor(f focusArea) lipgloss.Color {
+	if f == focusPending {
+		return lipgloss.Color("228")
+	}
+	return lipgloss.Color("240")
+}
+
+// pendingCursorColor draws the selected pending request prominently only while
+// the pending list has focus.
+func pendingCursorColor(f focusArea) lipgloss.Color {
+	if f == focusPending {
+		return lipgloss.Color("205")
+	}
+	return lipgloss.Color("240")
+}
+
 type providerStatus struct {
 	name      string
 	token     *entities.Token
@@ -194,6 +219,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected >= len(m.pending) && len(m.pending) > 0 {
 			m.selected = len(m.pending) - 1
 		}
+		if len(m.pending) == 0 {
+			m.focus = focusProviders
+		}
 		return m, nil
 
 	case state.BrowserOpen:
@@ -249,6 +277,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected < 0 {
 			m.selected = 0
 		}
+		if len(m.pending) == 0 {
+			m.focus = focusProviders
+		}
 		return m, tickCmd()
 
 	case tea.KeyMsg:
@@ -258,7 +289,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			if m.focus == focusProviders {
-				m.focus = focusPending
+				if len(m.pending) > 0 {
+					m.focus = focusPending
+				}
 			} else {
 				m.focus = focusProviders
 			}
@@ -359,7 +392,7 @@ func (m Model) View() string {
 
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		box.BorderForeground(lipgloss.Color("62")).Render(join(leftLines)),
+		box.BorderForeground(providerBorderColor(m.focus)).Render(join(leftLines)),
 		box.BorderForeground(lipgloss.Color("240")).Render(join(rightLines)),
 	)
 
@@ -379,14 +412,14 @@ func (m Model) View() string {
 		for i, req := range m.pending {
 			cursor := "  "
 			if i == m.selected {
-				cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("▸ ")
+				cursor = lipgloss.NewStyle().Foreground(pendingCursorColor(m.focus)).Render("▸ ")
 			}
 			method := lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render(req.Method)
 			path := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(truncate(req.Path, total-24))
 			lines = append(lines, fmt.Sprintf("%s%s %s  %s", cursor, method, path, req.CreatedAt.Format("15:04:05")))
 		}
 		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9,a-z] select  [tab] focus  [↑↓] move  [esc] reject"))
-		b = append(b, box.BorderForeground(lipgloss.Color("228")).Render(join(lines)), "")
+		b = append(b, box.BorderForeground(pendingBorderColor(m.focus)).Render(join(lines)), "")
 	} else {
 		b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  Waiting for requests..."), "")
 	}

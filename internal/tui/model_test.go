@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/TheFranconianCoder/auth-deck/internal/state"
 )
@@ -145,7 +146,10 @@ func TestEscClearsNoticeWithoutPending(t *testing.T) {
 }
 
 func TestTabTogglesFocus(t *testing.T) {
-	m := Model{focus: focusProviders}
+	m := Model{
+		pending: []*state.PendingRequest{{ProviderCh: make(chan state.Decision, 1)}},
+		focus:   focusProviders,
+	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if got := updated.(Model).focus; got != focusPending {
@@ -155,5 +159,56 @@ func TestTabTogglesFocus(t *testing.T) {
 	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyTab})
 	if got := updated.(Model).focus; got != focusProviders {
 		t.Fatalf("focus = %v, want focusProviders", got)
+	}
+}
+
+func TestTabWithoutPendingStaysOnProviders(t *testing.T) {
+	m := Model{focus: focusProviders}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+	if got := updated.(Model).focus; got != focusProviders {
+		t.Fatalf("focus = %v, want focusProviders", got)
+	}
+}
+
+func TestFocusColors(t *testing.T) {
+	if got := providerBorderColor(focusProviders); got != lipgloss.Color("62") {
+		t.Errorf("providerBorderColor(focusProviders) = %q", got)
+	}
+	if got := providerBorderColor(focusPending); got != lipgloss.Color("240") {
+		t.Errorf("providerBorderColor(focusPending) = %q", got)
+	}
+
+	if got := pendingBorderColor(focusPending); got != lipgloss.Color("228") {
+		t.Errorf("pendingBorderColor(focusPending) = %q", got)
+	}
+	if got := pendingBorderColor(focusProviders); got != lipgloss.Color("240") {
+		t.Errorf("pendingBorderColor(focusProviders) = %q", got)
+	}
+
+	if got := pendingCursorColor(focusPending); got != lipgloss.Color("205") {
+		t.Errorf("pendingCursorColor(focusPending) = %q", got)
+	}
+	if got := pendingCursorColor(focusProviders); got != lipgloss.Color("240") {
+		t.Errorf("pendingCursorColor(focusProviders) = %q", got)
+	}
+}
+
+func TestRequestDoneResetsFocus(t *testing.T) {
+	req := &state.PendingRequest{ID: "req-1", ProviderCh: make(chan state.Decision, 1)}
+	m := Model{
+		pending: []*state.PendingRequest{req},
+		focus:   focusPending,
+	}
+
+	updated, _ := m.Update(state.RequestDone{ID: "req-1"})
+	got := updated.(Model)
+
+	if got.focus != focusProviders {
+		t.Fatalf("focus = %v, want focusProviders", got.focus)
+	}
+	if len(got.pending) != 0 {
+		t.Fatalf("pending = %d, want 0", len(got.pending))
 	}
 }
