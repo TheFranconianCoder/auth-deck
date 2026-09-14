@@ -14,6 +14,18 @@ import (
 	"github.com/TheFranconianCoder/auth-deck/internal/version"
 )
 
+// focusArea is the pane that receives cursor movement keys.
+type focusArea int
+
+const (
+	focusProviders focusArea = iota
+	focusPending
+)
+
+// maxProviderRows bounds the provider viewport so the left panel keeps the
+// same height as the log panel.
+const maxProviderRows = 12
+
 type providerStatus struct {
 	name      string
 	token     *entities.Token
@@ -23,19 +35,22 @@ type providerStatus struct {
 }
 
 type Model struct {
-	providers    []providerStatus
-	pending      []*state.PendingRequest
-	logs         []state.LogEntry
-	selected     int
-	width        int
-	height       int
-	ready        bool
-	spinner      spinner.Model
-	queue        *state.RequestQueue
-	browserURL   string
-	browserProto string
-	notice       string
-	fetchToken   func(provider string)
+	providers      []providerStatus
+	pending        []*state.PendingRequest
+	logs           []state.LogEntry
+	selected       int
+	focus          focusArea
+	providerCursor int
+	providerOffset int
+	width          int
+	height         int
+	ready          bool
+	spinner        spinner.Model
+	queue          *state.RequestQueue
+	browserURL     string
+	browserProto   string
+	notice         string
+	fetchToken     func(provider string)
 }
 
 type tickMsg struct{}
@@ -66,10 +81,89 @@ func NewModel(catalog *state.ProviderCatalog, queue *state.RequestQueue, initial
 		providers:  statuses,
 		pending:    make([]*state.PendingRequest, 0),
 		logs:       make([]state.LogEntry, 0),
+		focus:      focusProviders,
 		spinner:    s,
 		queue:      queue,
 		fetchToken: fetchToken,
 	}
+}
+
+// providerKey returns the keyboard shortcut for a provider index: 1-9 for the
+// first nine providers, a-z for the next twenty-six. Indices beyond 35 have no
+// shortcut and can only be addressed through the path (/token/{provider}).
+func providerKey(i int) string {
+	switch {
+	case i >= 0 && i < 9:
+		return string(rune('1' + i))
+	case i >= 9 && i < 35:
+		return string(rune('a' + i - 9))
+	default:
+		return ""
+	}
+}
+
+// providerIndex maps a single shortcut key back to a provider index.
+func providerIndex(key string) (int, bool) {
+	if len(key) != 1 {
+		return 0, false
+	}
+	switch c := key[0]; {
+	case c >= '1' && c <= '9':
+		return int(c - '1'), true
+	case c >= 'a' && c <= 'z':
+		return 9 + int(c-'a'), true
+	default:
+		return 0, false
+	}
+}
+
+// ensureProviderVisible scrolls the viewport so the cursor stays in range.
+func (m *Model) ensureProviderVisible() {
+	if m.providerCursor < m.providerOffset {
+		m.providerOffset = m.providerCursor
+	}
+	if m.providerCursor >= m.providerOffset+maxProviderRows {
+		m.providerOffset = m.providerCursor - maxProviderRows + 1
+	}
+	if m.providerOffset < 0 {
+		m.providerOffset = 0
+	}
+}
+
+// chooseProvider routes a decision for the selected pending request, or forces
+// a fresh token when no request is waiting.
+func (m *Model) chooseProvider(idx int) {
+	if idx < 0 || idx >= len(m.providers) {
+		return
+	}
+	if len(m.pending) > 0 {
+		if m.selected < 0 || m.selected >= len(m.pending) {
+			m.selected = len(m.pending) - 1
+		}
+		req := m.pending[m.selected]
+		req.ProviderCh <- state.Decision{Provider: m.providers[idx].name}
+		m.browserURL = ""
+		return
+	}
+	if m.fetchToken != nil {
+		m.notice = fmt.Sprintf("Fetching token for %s ...", m.providers[idx].name)
+		m.fetchToken(m.providers[idx].name)
+	}
+}
+
+// rejectSelected declines the selected pending request, answering the caller
+// with a rejection.
+func (m *Model) rejectSelected() {
+	if len(m.pending) == 0 {
+		return
+	}
+	if m.selected < 0 || m.selected >= len(m.pending) {
+		m.selected = len(m.pending) - 1
+	}
+	req := m.pending[m.selected]
+	req.ProviderCh <- state.Decision{Rejected: true}
+	m.browserURL = ""
+	m.notice = fmt.Sprintf("Request rejected: %s %s", req.Method, req.Path)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -87,6 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case state.RequestAdded:
 		m.pending = append(m.pending, msg.Request)
 		m.selected = len(m.pending) - 1
+		m.focus = focusProviders
 		return m, nil
 
 	case state.RequestDone:
@@ -135,7 +230,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.providers {
 			if m.providers[i].name == msg.Provider {
 				m.providers[i].needsAuth = true
-				m.notice = fmt.Sprintf("Re-login required for %s—press [%d] to authenticate", msg.Provider, i+1)
+				if key := providerKey(i); key != "" {
+					m.notice = fmt.Sprintf("Re-login required for %s—press [%s] to authenticate", msg.Provider, key)
+				} else {
+					m.notice = fmt.Sprintf("Re-login required for %s—use /token/%s to authenticate", msg.Provider, msg.Provider)
+				}
 				break
 			}
 		}
@@ -154,50 +253,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
 			return m, tea.Quit
 
-		case "up", "k":
-			if m.selected > 0 {
+		case "tab":
+			if m.focus == focusProviders {
+				m.focus = focusPending
+			} else {
+				m.focus = focusProviders
+			}
+			return m, nil
+
+		case "up":
+			if m.focus == focusProviders {
+				if m.providerCursor > 0 {
+					m.providerCursor--
+				}
+				m.ensureProviderVisible()
+			} else if m.selected > 0 {
 				m.selected--
 			}
+			return m, nil
 
-		case "down", "j":
-			if m.selected < len(m.pending)-1 {
+		case "down":
+			if m.focus == focusProviders {
+				if m.providerCursor < len(m.providers)-1 {
+					m.providerCursor++
+				}
+				m.ensureProviderVisible()
+			} else if m.selected < len(m.pending)-1 {
 				m.selected++
 			}
+			return m, nil
 
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(msg.String()[0]-'0') - 1
-			if idx < len(m.providers) {
+		case "enter":
+			if m.focus == focusPending {
 				if len(m.pending) > 0 {
-					if m.selected < 0 || m.selected >= len(m.pending) {
-						m.selected = len(m.pending) - 1
-					}
-					req := m.pending[m.selected]
-					req.ProviderCh <- state.Decision{Provider: m.providers[idx].name}
-					m.browserURL = ""
-					return m, nil
+					m.focus = focusProviders
 				}
-				if m.fetchToken != nil {
-					m.notice = fmt.Sprintf("Fetching token for %s ...", m.providers[idx].name)
-					m.fetchToken(m.providers[idx].name)
-				}
+				return m, nil
 			}
-
-		case "r":
-			if len(m.pending) > 0 {
-				if m.selected < 0 || m.selected >= len(m.pending) {
-					m.selected = len(m.pending) - 1
-				}
-				req := m.pending[m.selected]
-				req.ProviderCh <- state.Decision{Rejected: true}
-				m.browserURL = ""
-				m.notice = fmt.Sprintf("Request rejected: %s %s", req.Method, req.Path)
-			}
+			m.chooseProvider(m.providerCursor)
+			return m, nil
 
 		case "esc":
-			m.notice = ""
+			if len(m.pending) > 0 {
+				m.rejectSelected()
+			} else {
+				m.notice = ""
+			}
+			return m, nil
+
+		default:
+			if idx, ok := providerIndex(msg.String()); ok {
+				m.chooseProvider(idx)
+			}
 			return m, nil
 		}
 
@@ -275,7 +385,7 @@ func (m Model) View() string {
 			path := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(truncate(req.Path, total-24))
 			lines = append(lines, fmt.Sprintf("%s%s %s  %s", cursor, method, path, req.CreatedAt.Format("15:04:05")))
 		}
-		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9] select provider  [r] reject  [↑↓] navigate"))
+		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9,a-z] select  [tab] focus  [↑↓] move  [esc] reject"))
 		b = append(b, box.BorderForeground(lipgloss.Color("228")).Render(join(lines)), "")
 	} else {
 		b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  Waiting for requests..."), "")
@@ -285,7 +395,7 @@ func (m Model) View() string {
 		b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("  "+truncate(m.notice, total-4)), "")
 	}
 
-	b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginTop(1).Render("[q] Quit"))
+	b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginTop(1).Render("[ctrl+c] Quit"))
 
 	out := ""
 	for _, line := range b {
@@ -295,8 +405,28 @@ func (m Model) View() string {
 }
 
 func (m Model) providerLines() []string {
-	lines := []string{lipgloss.NewStyle().Bold(true).Render("Providers:")}
-	for i, p := range m.providers {
+	header := "Providers:"
+	if len(m.providers) > maxProviderRows {
+		start := m.providerOffset + 1
+		end := m.providerOffset + maxProviderRows
+		if end > len(m.providers) {
+			end = len(m.providers)
+		}
+		header = fmt.Sprintf("Providers: %d-%d/%d", start, end, len(m.providers))
+	}
+	lines := []string{lipgloss.NewStyle().Bold(true).Render(header)}
+
+	start := m.providerOffset
+	if start > len(m.providers) {
+		start = len(m.providers)
+	}
+	end := start + maxProviderRows
+	if end > len(m.providers) {
+		end = len(m.providers)
+	}
+
+	for i := start; i < end; i++ {
+		p := m.providers[i]
 		marker := lipgloss.NewStyle().Foreground(lipgloss.Color("31")).Render("○ no token")
 		if p.token != nil && p.token.IsValid() {
 			remaining := time.Until(p.token.ExpiresAt)
@@ -308,7 +438,18 @@ func (m Model) providerLines() []string {
 		} else if p.lastErr != "" {
 			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("31")).Render("✗ error")
 		}
-		lines = append(lines, fmt.Sprintf(" [%d] %-11.11s %s", i+1, p.name, marker))
+
+		label := "[–]"
+		if key := providerKey(i); key != "" {
+			label = "[" + key + "]"
+		}
+
+		cursor := "  "
+		if m.focus == focusProviders && i == m.providerCursor {
+			cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("▸ ")
+		}
+
+		lines = append(lines, fmt.Sprintf("%s%s %-11.11s %s", cursor, label, p.name, marker))
 	}
 	return lines
 }

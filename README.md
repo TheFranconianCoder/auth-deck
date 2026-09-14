@@ -96,7 +96,7 @@ curl -fsSL https://raw.githubusercontent.com/TheFranconianCoder/auth-deck/main/c
 auth-deck
 ```
 
-The proxy listens on `127.0.0.1:9090` by default and the TUI starts automatically. Press `q` to stop both.
+The proxy listens on `127.0.0.1:9090` by default and the TUI starts automatically. Press `ctrl+c` to stop both.
 
 ### Version
 
@@ -213,15 +213,15 @@ Providers and the request log sit side by side; pending requests appear below.
 AuthDeck :: OAuth 2.0 Local Token Proxy
 
 ┌ Providers ────────────────────┐ ┌ Log ──────────────────────────────────┐
-│  [1] logto        ● active 59m │ │ 14:30:21 GET   logto  200 /api/users  │
-│  [2] logto-m2m    ● active 1h  │ │ 14:30:19 TOKEN logto  200 /token      │
-│  [3] google       ○ no token   │ │                                        │
+│ ▸ [1] logto        ● active 59m │ │ 14:30:21 GET   logto  200 /api/users  │
+│   [2] logto-m2m    ● active 1h  │ │ 14:30:19 TOKEN logto  200 /token      │
+│   [3] google       ○ no token   │ │                                        │
 └───────────────────────────────┘ └────────────────────────────────────────┘
 
 New request—select provider:
 ▸ PROXY /api/users  14:30:21
 
-[1-9] select provider  [r] reject  [↑↓] navigate
+[1-9,a-z] select  [tab] focus  [↑↓] move  [esc] reject
 ```
 
 Each log line shows `time`, `method`, `provider`, HTTP `status`, and the **called path** (especially useful for
@@ -229,11 +229,16 @@ Each log line shows `time`, `method`, `provider`, HTTP `status`, and the **calle
 
 | Key | Action |
 |---|---|
-| `1`–`9` | With a pending request: choose the provider. With none: **force a fresh token** (refresh, re-mint, or browser login). |
-| `r` | With a pending request: reject it (the caller receives `403`). |
-| `↑` / `k`, `↓` / `j` | Move the selection between pending requests. |
-| `esc` | Clear the current notice. |
-| `q` / `ctrl+c` | Quit AuthDeck (stops the proxy too). |
+| `1`–`9`, `a`–`z` | With a pending request: choose the provider. With none: **force a fresh token** (refresh, re-mint, or browser login). `1`–`9` cover the first nine providers, `a`–`z` the next twenty-six. |
+| `tab` | Switch focus between the provider list and the pending requests. |
+| `↑` / `↓` | Move the cursor within the focused list (the provider list scrolls automatically). |
+| `enter` | In the provider list: choose the highlighted provider. In the pending list: return focus to the provider list. |
+| `esc` | With a pending request: reject it (the caller receives `403`). Otherwise clear the current notice. |
+| `ctrl+c` | Quit AuthDeck (stops the proxy too). |
+
+The provider list shows a viewport of twelve entries with a `n-m/total` position in its header. Providers beyond the
+first 35 (nine digits plus twenty-six letters) have no shortcut—their label is `[–]`—and are only reachable by pinning
+them in the path (`/token/{provider}` or `/direct/{provider}/...`).
 
 Token markers: `● active` (valid, with remaining time), `◐ expired`, `↻ re-login` (interactive login required),
 `○ no token`, `✗ error`.
@@ -248,7 +253,7 @@ Token markers: `● active` (valid, with remaining time), `◐ expired`, `↻ re
   - a provider with a refresh token → silent refresh;
   - `client_credentials` → re-mint;
   - `authorization_code` without a usable refresh token → a `↻ re-login` notice instead of a failed request.
-- **Manual force:** pressing a provider's number with no pending request always fetches a fresh token
+- **Manual force:** pressing a provider's number or letter with no pending request always fetches a fresh token
   (`RefreshNow`), bypassing the cache.
 - **PKCE:** enabled by default (`S256`) for `authorization_code`; disable with `pkce: false`.
 
