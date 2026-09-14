@@ -179,8 +179,10 @@ Provider order in the TUI follows the order in the YAML file.
 
 ## Endpoints
 
-AuthDeck accepts a single grant: **`client_credentials`**. A `POST /token` carrying any other `grant_type` is rejected
-with `400`.
+AuthDeck accepts `client_credentials` and `refresh_token`. A `POST /token` carrying any other `grant_type` is rejected
+with `400`. The `refresh_token` grant is a convenience alias for clients that only re-request a token when they hold
+one: AuthDeck resolves the provider from the path and returns whatever token it has (or can obtain), exactly as for
+`client_credentials`. It therefore requires `POST /token/{provider}`.
 
 | Method | Path | Description |
 |---|---|---|
@@ -194,8 +196,12 @@ with `400`.
 **Token response**
 
 ```json
-{ "access_token": "eyJ...", "token_type": "Bearer", "expires_in": 3600 }
+{ "access_token": "eyJ...", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "authdeck:logto-m2m" }
 ```
+
+The `refresh_token` is a stable, opaque per-provider value, not an upstream secret: the provider is addressed by the
+request path, so the value only signals that the client may re-request a token. Pass it back with
+`grant_type=refresh_token` to receive a fresh response.
 
 ---
 
@@ -274,10 +280,26 @@ Client Secret: x      # ignored
 That is the only client configuration needed. If the pinned/provider-selected upstream uses `authorization_code`,
 AuthDeck handles the browser login transparently and still returns the token here.
 
+AuthDeck's token response includes a `refresh_token`, so clients that only re-request tokens when one is present (such
+as Bruno) refresh against the pinned endpoint instead of sitting on an expired token:
+
+```
+Grant Type:  Client Credentials
+Token URL:   http://127.0.0.1:9090/token/logto-m2m # pin the provider
+```
+
+On refresh, the client sends `grant_type=refresh_token` to the same `/token/{provider}` URL with the returned token.
+AuthDeck then resolves the provider from the path and returns a current token—identical to a fresh
+`client_credentials` call.
+
 ### curl—token
 
 ```bash
 curl -s -X POST http://127.0.0.1:9090/token/logto-m2m
+
+# Refresh (provider pinned in the path):
+curl -s -X POST http://127.0.0.1:9090/token/logto-m2m \
+  -d grant_type=refresh_token -d refresh_token=authdeck:logto-m2m
 ```
 
 ### curl—transparent proxy
@@ -291,10 +313,10 @@ curl -s http://127.0.0.1:9090/proxy/api/users
 ```
 
 Everything after `/proxy/` or `/direct/{provider}/` is forwarded to `<base_url>/<path>`; method, query, headers, and
-body are passed through. All client request headers are forwarded, except hop-by-hop headers, `Content-Length`,
-`Authorization` (AuthDeck sets its own), and `Host`. AuthDeck adds `Authorization: Bearer <token>` plus
-`X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto`; upstream response headers are passed back (minus
-hop-by-hop headers).
+body are passed through. All client request headers are forwarded, except hop-by-hop headers, proxy-specific
+`X-Forwarded-*` headers, `Content-Length`, `Authorization` (AuthDeck sets its own), and `Host`. AuthDeck adds
+`Authorization: Bearer <token>`; upstream response headers are passed back (minus hop-by-hop and `X-Forwarded-*`
+headers). As a local client rather than a reverse proxy, AuthDeck sets no forwarding headers of its own.
 
 Because the provider lives in the path, a client only needs to know an IdP or an API base URL—never an AuthDeck
 header. Point an OAuth2 client at `/token/{provider}` (a standard client-credentials response), or point the API base

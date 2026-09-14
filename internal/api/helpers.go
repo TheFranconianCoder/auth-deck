@@ -3,12 +3,18 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TheFranconianCoder/auth-deck/internal/core/entities"
 	"github.com/TheFranconianCoder/auth-deck/internal/types"
 )
+
+// refreshTokenFor returns AuthDeck's stable, opaque refresh token for a
+// provider. It is not an upstream secret: the provider is already addressed by
+// the request path, so the value only signals that a refresh is available.
+func refreshTokenFor(provider string) string {
+	return "authdeck:" + provider
+}
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -25,10 +31,19 @@ func respondError(w http.ResponseWriter, err error) {
 	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 }
 
-func writeToken(w http.ResponseWriter, token *entities.Token) {
+func writeToken(w http.ResponseWriter, token *entities.Token, provider string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	fmt.Fprintf(w, `{"access_token":"%s","token_type":"%s","expires_in":%d}`,
-		token.AccessToken, token.TokenType, token.ExpiresIn())
+
+	payload := map[string]any{
+		"access_token":  token.AccessToken,
+		"token_type":    token.TokenType,
+		"expires_in":    token.ExpiresIn(),
+		"refresh_token": refreshTokenFor(provider),
+	}
+	if token.Scope != "" {
+		payload["scope"] = token.Scope
+	}
+	json.NewEncoder(w).Encode(payload)
 }

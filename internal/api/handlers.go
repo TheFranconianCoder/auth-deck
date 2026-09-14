@@ -41,6 +41,16 @@ func respondUsecaseError(w http.ResponseWriter, err error) {
 	}
 }
 
+// tokenGrants are the grant types AuthDeck accepts from clients. Refresh is a
+// convenience alias: it resolves the same token as client_credentials.
+func isSupportedGrant(grantType string) bool {
+	switch grantType {
+	case "", "client_credentials", "refresh_token":
+		return true
+	}
+	return false
+}
+
 func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		respondError(w, types.NewMethodNotAllowedError("POST required"))
@@ -51,8 +61,13 @@ func (r *Router) handleToken(w http.ResponseWriter, req *http.Request) {
 		respondError(w, types.NewBadRequestError("invalid request body"))
 		return
 	}
-	if grantType := req.FormValue("grant_type"); grantType != "" && grantType != "client_credentials" {
-		respondError(w, types.NewBadRequestError("only the client_credentials grant is supported"))
+	grantType := req.FormValue("grant_type")
+	if !isSupportedGrant(grantType) {
+		respondError(w, types.NewBadRequestError("only the client_credentials and refresh_token grants are supported"))
+		return
+	}
+	if grantType == "refresh_token" {
+		respondError(w, types.NewBadRequestError("refresh_token requires a provider path: POST /token/{provider}"))
 		return
 	}
 
@@ -74,6 +89,17 @@ func (r *Router) handleTokenDirect(w http.ResponseWriter, req *http.Request) {
 	if provider == "" {
 		respondError(w, types.NewBadRequestError("provider name required"))
 		return
+	}
+
+	if req.Method == http.MethodPost {
+		if err := req.ParseForm(); err != nil {
+			respondError(w, types.NewBadRequestError("invalid request body"))
+			return
+		}
+		if !isSupportedGrant(req.FormValue("grant_type")) {
+			respondError(w, types.NewBadRequestError("only the client_credentials and refresh_token grants are supported"))
+			return
+		}
 	}
 	r.writeProviderToken(w, req, provider)
 }
@@ -104,7 +130,7 @@ func (r *Router) writeProviderToken(w http.ResponseWriter, req *http.Request, pr
 		Status:   http.StatusOK,
 		Err:      fmt.Sprintf("%dms", time.Since(start).Milliseconds()),
 	})
-	writeToken(w, token)
+	writeToken(w, token, provider)
 }
 
 func (r *Router) handleCallback(w http.ResponseWriter, req *http.Request) {
