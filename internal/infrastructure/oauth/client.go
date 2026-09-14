@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,6 +170,15 @@ func int64At(data map[string]any, path string) int64 {
 	case json.Number:
 		i, _ := n.Int64()
 		return i
+	case string:
+		// Some providers return numeric fields (notably expires_in) as strings.
+		s := strings.TrimSpace(n)
+		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return int64(math.Trunc(f))
+		}
 	}
 	return 0
 }
