@@ -412,13 +412,13 @@ func (m Model) View() string {
 		for i, req := range m.pending {
 			cursor := "  "
 			if i == m.selected {
-				cursor = lipgloss.NewStyle().Foreground(pendingCursorColor(m.focus)).Render("▸ ")
+				cursor = lipgloss.NewStyle().Foreground(pendingCursorColor(m.focus)).Render("● ")
 			}
 			method := lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render(req.Method)
 			path := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(truncate(req.Path, total-24))
 			lines = append(lines, fmt.Sprintf("%s%s %s  %s", cursor, method, path, req.CreatedAt.Format("15:04:05")))
 		}
-		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9,a-z] select  [tab] focus  [↑↓] move  [esc] reject"))
+		lines = append(lines, "", lipgloss.NewStyle().Faint(true).Render("[1-9,a-z] select  [tab] focus  [up/down] move  [esc] reject"))
 		b = append(b, box.BorderForeground(pendingBorderColor(m.focus)).Render(join(lines)), "")
 	} else {
 		b = append(b, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  Waiting for requests..."), "")
@@ -479,7 +479,7 @@ func (m Model) providerLines() []string {
 
 		cursor := "  "
 		if m.focus == focusProviders && i == m.providerCursor {
-			cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("▸ ")
+			cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("● ")
 		}
 
 		lines = append(lines, fmt.Sprintf("%s%s %-11.11s %s", cursor, label, p.name, marker))
